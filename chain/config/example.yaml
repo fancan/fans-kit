@@ -1,0 +1,88 @@
+default: ethereum
+
+metrics:
+  enabled: true
+  path: /metrics
+
+chains:
+  ethereum:
+    chain_id: 1
+    providers:
+      - name: alchemy
+        priority: 1
+        weight: 2
+        http_url: https://eth-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}
+        ws_url: wss://eth-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}
+      - name: infura
+        priority: 2
+        http_url: https://mainnet.infura.io/v3/${INFURA_API_KEY}
+        ws_url: wss://mainnet.infura.io/ws/v3/${INFURA_API_KEY}
+      - name: self-hosted
+        priority: 3
+        http_url: http://127.0.0.1:8545
+        ws_url: ws://127.0.0.1:8546
+
+    http:
+      timeout: 8s
+      max_retries: 2
+      max_batch_size: 100
+
+    websocket:
+      reconnect_interval: 2s
+      send_buffer: 512
+
+    health_check:
+      enabled: true
+      interval: 10s
+      timeout: 3s
+      failure_threshold: 3
+      success_threshold: 2
+      cooldown: 20s
+
+    block_monitor:
+      enabled: true
+      interval: 5s
+      max_lag: 5
+      consistency_depth: 2
+
+    log_recovery:
+      enabled: true
+      max_range: 1000
+      dedup_capacity: 100000
+      reorg_depth: 64
+
+  arbitrum:
+    chain_id: 42161
+    providers:
+      - name: arbitrum-primary
+        priority: 1
+        http_url: https://arb-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}
+        ws_url: wss://arb-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}
+      - name: arbitrum-backup
+        priority: 2
+        http_url: https://arbitrum-mainnet.infura.io/v3/${INFURA_API_KEY}
+        ws_url: wss://arbitrum-mainnet.infura.io/ws/v3/${INFURA_API_KEY}
+    http:
+      timeout: 8s
+      max_retries: 1
+      max_batch_size: 100
+    websocket:
+      reconnect_interval: 2s
+      send_buffer: 512
+    health_check:
+      enabled: true
+      interval: 10s
+      timeout: 3s
+      failure_threshold: 3
+      success_threshold: 2
+      cooldown: 20s
+    block_monitor:
+      enabled: true
+      interval: 5s
+      max_lag: 8
+      consistency_depth: 2
+    log_recovery:
+      enabled: true
+      max_range: 1000
+      dedup_capacity: 100000
+      reorg_depth: 64
