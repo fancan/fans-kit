@@ -1,6 +1,7 @@
 package log
 
 import (
+	"context"
 	"encoding/json"
 	"math"
 	"os"
@@ -115,6 +116,62 @@ func TestCallerAnnotationDirectMethod(t *testing.T) {
 	if !strings.Contains(caller, "log_test.go") {
 		t.Fatalf("caller does not point to test file: %q", caller)
 	}
+}
+
+// assertCallerPointsToTestFile 断言 caller 注解指向本测试文件，而非模块内部实现。
+func assertCallerPointsToTestFile(t *testing.T, caller string) {
+	t.Helper()
+	if strings.Contains(caller, "zap/logger.go") || strings.Contains(caller, "log/log.go") {
+		t.Fatalf("caller points to internal code: %q", caller)
+	}
+	if !strings.Contains(caller, "log_test.go") {
+		t.Fatalf("caller does not point to test file: %q", caller)
+	}
+}
+
+// TestCallerAnnotationInfof 验证格式化门面函数 log.Infof() 的 caller 注解
+// 同样指向业务调用点（格式化方法内部不再额外经过一层普通方法）。
+func TestCallerAnnotationInfof(t *testing.T) {
+	resetGlobal()
+
+	f := filepath.Join(t.TempDir(), "app.log")
+	lg := newFileLogger(t, f)
+	if err := SetGlobal(lg); err != nil {
+		t.Fatal(err)
+	}
+
+	Infof("fmt-call %d", 1) // 期望 caller 指向这一行
+	if err := Sync(); err != nil {
+		t.Logf("sync err (ignored): %v", err)
+	}
+	_ = lg.Close()
+
+	lines := readJSONLines(t, f)
+	caller, _ := lines[0]["caller"].(string)
+	assertCallerPointsToTestFile(t, caller)
+}
+
+// TestCallerAnnotationInfoContext 验证 Context 门面函数 log.InfoContext() 的 caller 注解
+// 指向业务调用点（Context 字段合并在 write 之前完成，不额外占用调用栈帧）。
+func TestCallerAnnotationInfoContext(t *testing.T) {
+	resetGlobal()
+
+	f := filepath.Join(t.TempDir(), "app.log")
+	lg := newFileLogger(t, f)
+	if err := SetGlobal(lg); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := context.Background()
+	InfoContext(ctx, "ctx-call") // 期望 caller 指向这一行
+	if err := Sync(); err != nil {
+		t.Logf("sync err (ignored): %v", err)
+	}
+	_ = lg.Close()
+
+	lines := readJSONLines(t, f)
+	caller, _ := lines[0]["caller"].(string)
+	assertCallerPointsToTestFile(t, caller)
 }
 
 // TestSetGlobalClosesOldLogger 验证 SetGlobal 重复调用时会关闭被替换的旧 Logger，

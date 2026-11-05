@@ -360,49 +360,45 @@ func (l *Logger) Error(msg string, fields ...api.Field) {
 }
 
 func (l *Logger) Debugf(format string, args ...any) {
-	if l.Enabled(api.DebugLevel) {
-		l.Debug(fmt.Sprintf(format, args...))
+	if !l.Enabled(api.DebugLevel) {
+		return
 	}
+	l.write(api.DebugLevel, fmt.Sprintf(format, args...))
 }
 
 func (l *Logger) Infof(format string, args ...any) {
-	if l.Enabled(api.InfoLevel) {
-		l.Info(fmt.Sprintf(format, args...))
+	if !l.Enabled(api.InfoLevel) {
+		return
 	}
+	l.write(api.InfoLevel, fmt.Sprintf(format, args...))
 }
 
 func (l *Logger) Warnf(format string, args ...any) {
-	if l.Enabled(api.WarnLevel) {
-		l.Warn(fmt.Sprintf(format, args...))
+	if !l.Enabled(api.WarnLevel) {
+		return
 	}
+	l.write(api.WarnLevel, fmt.Sprintf(format, args...))
 }
 
 func (l *Logger) Errorf(format string, args ...any) {
-	if l.Enabled(api.ErrorLevel) {
-		l.Error(fmt.Sprintf(format, args...))
-	}
-}
-
-func (l *Logger) writeContext(
-	level api.Level,
-	ctx context.Context,
-	msg string,
-	fields ...api.Field,
-) {
-	if !l.Enabled(level) {
+	if !l.Enabled(api.ErrorLevel) {
 		return
 	}
+	l.write(api.ErrorLevel, fmt.Sprintf(format, args...))
+}
 
+// mergeContextFields 提取 Context 链路字段并与调用方字段合并。
+// 该函数在 write 之前返回，因此不会出现在 caller 捕获的调用栈中。
+func mergeContextFields(ctx context.Context, fields []api.Field) []api.Field {
 	contextFields := api.ContextFields(ctx)
-
-	if len(contextFields) > 0 {
-		merged := make([]api.Field, 0, len(contextFields)+len(fields))
-		merged = append(merged, contextFields...)
-		merged = append(merged, fields...)
-		fields = merged
+	if len(contextFields) == 0 {
+		return fields
 	}
 
-	l.write(level, msg, fields...)
+	merged := make([]api.Field, 0, len(contextFields)+len(fields))
+	merged = append(merged, contextFields...)
+	merged = append(merged, fields...)
+	return merged
 }
 
 func (l *Logger) DebugContext(
@@ -410,7 +406,10 @@ func (l *Logger) DebugContext(
 	msg string,
 	fields ...api.Field,
 ) {
-	l.writeContext(api.DebugLevel, ctx, msg, fields...)
+	if !l.Enabled(api.DebugLevel) {
+		return
+	}
+	l.write(api.DebugLevel, msg, mergeContextFields(ctx, fields)...)
 }
 
 func (l *Logger) InfoContext(
@@ -418,7 +417,10 @@ func (l *Logger) InfoContext(
 	msg string,
 	fields ...api.Field,
 ) {
-	l.writeContext(api.InfoLevel, ctx, msg, fields...)
+	if !l.Enabled(api.InfoLevel) {
+		return
+	}
+	l.write(api.InfoLevel, msg, mergeContextFields(ctx, fields)...)
 }
 
 func (l *Logger) WarnContext(
@@ -426,7 +428,10 @@ func (l *Logger) WarnContext(
 	msg string,
 	fields ...api.Field,
 ) {
-	l.writeContext(api.WarnLevel, ctx, msg, fields...)
+	if !l.Enabled(api.WarnLevel) {
+		return
+	}
+	l.write(api.WarnLevel, msg, mergeContextFields(ctx, fields)...)
 }
 
 func (l *Logger) ErrorContext(
@@ -434,7 +439,10 @@ func (l *Logger) ErrorContext(
 	msg string,
 	fields ...api.Field,
 ) {
-	l.writeContext(api.ErrorLevel, ctx, msg, fields...)
+	if !l.Enabled(api.ErrorLevel) {
+		return
+	}
+	l.write(api.ErrorLevel, msg, mergeContextFields(ctx, fields)...)
 }
 
 func (l *Logger) Sync() error {

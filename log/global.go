@@ -10,11 +10,11 @@ import (
 type Logger = api.Logger
 
 type globalState struct {
-	// logger 面向直接方法调用（Global().Info / logger.Info），caller 深度以此为基准。
+	// logger面向直接方法调用（Global().Info / logger.Info），caller深度以此为基准。
 	logger Logger
 
-	// facade 面向全局门面函数（log.Info / log.Error 等），
-	// 在 logger 基础上额外跳过门面函数自身一帧，使 caller 指向业务调用点。
+	// facade面向全局门面函数（log.Info / log.Error 等），
+	// 在logger基础上额外跳过门面函数自身一帧，使caller指向业务调用点。
 	facade Logger
 }
 
@@ -37,8 +37,8 @@ func SetGlobal(logger Logger) error {
 
 	old := global.Swap(next)
 
-	// 关闭被替换掉的旧 Logger，避免文件句柄泄漏。
-	// 排除回退 Logger（由包自身持有）以及同一 Logger 的重复设置。
+	// 关闭被替换掉的旧Logger，避免文件句柄泄漏。
+	// 排除回退Logger（由包自身持有）以及同一Logger的重复设置。
 	if old != nil && old.logger != logger && old.logger != fallbackLogger {
 		_ = old.logger.Close()
 	}
@@ -56,7 +56,7 @@ func Global() Logger {
 	return state.logger
 }
 
-// facade 获取面向全局门面函数的 Logger（caller 深度已对齐）。
+// facade 获取面向全局门面函数的Logger（caller深度已对齐）。
 func facade() Logger {
 	state := global.Load()
 	if state == nil {
