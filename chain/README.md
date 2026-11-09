@@ -33,7 +33,7 @@ chain/
 │   └── metrics.go           # Prometheus 文本暴露
 ├── subscription/
 │   └── subscription.go      # 有界事件去重
-└── examples/basic/main.go
+└── 
 ```
 
 ## 安装

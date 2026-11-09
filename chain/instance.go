@@ -126,7 +126,7 @@ func (i *Instance) bindContext(parent context.Context) (context.Context, func())
 }
 
 // startSubscription 在实例未关闭时登记并启动一个订阅协程，登记/关闭检查在
-// lifeMu 保护下进行，避免与 Close 竞态。
+// lifeMu 保护下进行，避免与Close竞态。
 func (i *Instance) startSubscription(parent context.Context, run func(context.Context)) error {
 	i.lifeMu.Lock()
 	if i.closed {

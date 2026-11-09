@@ -21,7 +21,7 @@ type logRecoveryError struct{ err error }
 func (e *logRecoveryError) Error() string { return "log recovery failed: " + e.err.Error() }
 func (e *logRecoveryError) Unwrap() error { return e.err }
 
-// Subscribe 建立逻辑 WS 订阅：库会自动重连与重新订阅。
+// Subscribe 建立逻辑WS订阅 注意：会自动重连与重新订阅。
 // 通用订阅无法保证补发断线期间遗漏的消息。
 func (i *Instance) Subscribe(ctx context.Context, namespace string, channel any, args ...any) error {
 	if ctx == nil {
@@ -36,6 +36,8 @@ func (i *Instance) Subscribe(ctx context.Context, namespace string, channel any,
 	}
 	return i.startSubscription(ctx, func(runCtx context.Context) { i.subscribeLoop(runCtx, namespace, channel, args...) })
 }
+
+// 订阅循环
 func (i *Instance) subscribeLoop(ctx context.Context, namespace string, channel any, args ...any) {
 	for ctx.Err() == nil {
 		connected := false
@@ -98,8 +100,8 @@ func (i *Instance) runSubscription(ctx context.Context, ep *provider.Endpoint, n
 	}
 }
 
-// HeadStream 订阅新区块头，返回区块号通道。内部复用 Subscribe 的自动重连逻辑；
-// 调用方取消或实例关闭时通道被关闭。无 WS 提供商时返回错误。
+// HeadStream 订阅新区块头，返回区块号通道。内部复用Subscribe的自动重连逻辑；
+// 调用方取消或实例关闭时通道被关闭。无WS提供商时返回错误。
 func (i *Instance) HeadStream(ctx context.Context) (<-chan uint64, error) {
 	if ctx == nil {
 		ctx = context.Background()
@@ -136,7 +138,7 @@ func (i *Instance) HeadStream(ctx context.Context) (<-chan uint64, error) {
 }
 
 // PendingTxStream 订阅公共内存池的 newPendingTransactions（pending tx hash 流）。
-// 语义与 HeadStream 一致：自动重连，调用方取消或实例关闭时通道被关闭。
+// 语义与HeadStream一致：自动重连，调用方取消或实例关闭时通道被关闭。
 func (i *Instance) PendingTxStream(ctx context.Context) (<-chan common.Hash, error) {
 	if ctx == nil {
 		ctx = context.Background()
@@ -169,9 +171,8 @@ func (i *Instance) PendingTxStream(ctx context.Context) (<-chan common.Hash, err
 	return out, nil
 }
 
-// SubscribeLogs 维护 eth_subscribe(logs) 流，并通过 eth_getLogs 补全缺口。
-// 通过 q.FromBlock 指定历史回放起点；为 nil 时从当前链头开始（启用日志恢复时，
-// 该链头在 WS 订阅建立后再回填）。ToBlock / BlockHash 不适用于实时订阅。
+// SubscribeLogs 维护eth_subscribe(logs)流，并通过eth_getLogs补全缺口。
+// 通过q.FromBlock指定历史回放起点；为 nil 时从当前链头开始（启用日志恢复时，该链头在WS订阅建立后再回填）。ToBlock/BlockHash不适用于实时订阅。
 func (i *Instance) SubscribeLogs(ctx context.Context, q ethereum.FilterQuery) (<-chan types.Log, error) {
 	if ctx == nil {
 		ctx = context.Background()
@@ -262,7 +263,7 @@ func (i *Instance) SubscribeLogs(ctx context.Context, q ethereum.FilterQuery) (<
 	return out, nil
 }
 
-// runLogSubscription 在单个端点上执行一次日志订阅生命周期：建立 WS 订阅后回填历史，
+// runLogSubscription 在单个端点上执行一次日志订阅生命周期：建立WS订阅后回填历史，
 // 订阅存续期间转发日志、更新游标并做去重；检测到重组时回退并重放。
 func (i *Instance) runLogSubscription(ctx context.Context, ep *provider.Endpoint, q ethereum.FilterQuery, cursor *uint64, floor uint64, cursorHash *common.Hash, dedup *subscription.Deduper, delivered map[string]types.Log, out chan<- types.Log) error {
 	subCtx, cancel := context.WithCancel(ctx)
@@ -354,7 +355,7 @@ func (i *Instance) runLogSubscription(ctx context.Context, ep *provider.Endpoint
 	}
 }
 
-// recoverLogs 用 eth_getLogs 分段回填游标到当前链头之间的日志（区间过大时自适应拆分）。
+// recoverLogs 用eth_getLogs分段回填游标到当前链头之间的日志（区间过大时自适应拆分）。
 func (i *Instance) recoverLogs(ctx context.Context, q ethereum.FilterQuery, cursor *uint64, dedup *subscription.Deduper, delivered map[string]types.Log, out chan<- types.Log) error {
 	head, err := i.BlockNumber(ctx)
 	if err != nil {
@@ -400,7 +401,7 @@ func (i *Instance) recoverLogs(ctx context.Context, q ethereum.FilterQuery, curs
 }
 
 // emitOrphanedLogs 在检测到重组后，把近期已投递但不再属于规范链的日志以
-// Removed=true 重新投递，让索引方可以回退状态。
+// 注意：Removed=true 重新投递，让索引方可以回退状态。
 func (i *Instance) emitOrphanedLogs(ctx context.Context, q ethereum.FilterQuery, from, to uint64, dedup *subscription.Deduper, delivered map[string]types.Log, out chan<- types.Log) error {
 	if from > to {
 		return nil
@@ -443,7 +444,7 @@ func (i *Instance) emitOrphanedLogs(ctx context.Context, q ethereum.FilterQuery,
 	return nil
 }
 
-// pruneDelivered 依据当前游标和重组深度，淘汰已投递 map 中过于陈旧的日志。
+// pruneDelivered 依据当前游标和重组深度，淘汰已投递map中过于陈旧的日志。
 func pruneDelivered(logs map[string]types.Log, cursor, depth uint64) {
 	if cursor <= depth {
 		return
@@ -456,7 +457,7 @@ func pruneDelivered(logs map[string]types.Log, cursor, depth uint64) {
 	}
 }
 
-// logSubscriptionArg 把 FilterQuery 转成 eth_subscribe(logs) 的订阅参数。
+// logSubscriptionArg 把FilterQuery转成eth_subscribe(logs)的订阅参数。
 func logSubscriptionArg(q ethereum.FilterQuery) map[string]any {
 	a := map[string]any{}
 	if len(q.Addresses) == 1 {
@@ -483,7 +484,7 @@ func logKey(l types.Log) string {
 	return fmt.Sprintf("%s/%s/%d", l.BlockHash.Hex(), l.TxHash.Hex(), l.Index)
 }
 
-// sendLog 在 ctx 取消前把日志写入输出通道；写入失败（ctx 取消）返回 false。
+// sendLog 在ctx取消前把日志写入输出通道；写入失败（ctx 取消）返回false。
 func sendLog(ctx context.Context, out chan<- types.Log, l types.Log) bool {
 	select {
 	case out <- l:
