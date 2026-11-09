@@ -6,7 +6,7 @@ import (
 	"sync"
 )
 
-// Deduper 是一个有界的 FIFO 去重集合，用于重连后避免重复投递。
+// Deduper 是一个有界的FIFO去重集合，用于重连后避免重复投递。
 type Deduper struct {
 	mu    sync.Mutex
 	cap   int
@@ -22,7 +22,7 @@ func NewDeduper(capacity int) *Deduper {
 	return &Deduper{cap: capacity, set: map[string]*list.Element{}, order: list.New()}
 }
 
-// Seen 判断 key 是否已存在；不存在则记录并（必要时）淘汰最旧项。
+// Seen 判断key是否已存在；不存在则记录并（必要时）淘汰最旧项。
 func (d *Deduper) Seen(key string) bool {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -39,7 +39,7 @@ func (d *Deduper) Seen(key string) bool {
 	return false
 }
 
-// Forget 移除 key，使之后再次出现时可重新投递（例如重组后重新纳入规范链）。
+// Forget 移除key，使之后再次出现时可重新投递（例如重组后重新纳入规范链）。
 func (d *Deduper) Forget(key string) {
 	d.mu.Lock()
 	defer d.mu.Unlock()

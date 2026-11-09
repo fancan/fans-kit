@@ -15,7 +15,7 @@ import (
 	"github.com/fancan/fans-kit/chain/transport"
 )
 
-// ConnectionError 封装连接错误；Error() 中刻意不包含端点 URL（可能含有 API Key）。
+// ConnectionError 封装连接错误；Error()中刻意不包含端点URL（可能含有API Key）。
 type ConnectionError struct {
 	Provider, Transport string
 	Cause               error
@@ -36,6 +36,7 @@ const (
 	HalfOpen               // 半开（试探中）
 )
 
+// Status类型状态转string
 func (s Status) String() string {
 	switch s {
 	case Healthy:
@@ -51,26 +52,26 @@ func (s Status) String() string {
 	}
 }
 
-// Endpoint 是一个 RPC 端点（对应一个提供商的 HTTP 或 WS 地址），
+// Endpoint 是一个RPC端点（对应一个提供商的HTTP或WS地址），
 // 内含熔断状态、延迟、区块高度与在途请求数等运行时信息。
 type Endpoint struct {
-	cfg                  config.ProviderConfig
-	httpClient, wsClient *transport.Client
-	connMu               sync.Mutex
-	mu                   sync.RWMutex
-	status               Status
-	probeInFlight        bool
-	failures, successes  int
-	consistencyFailures  int
-	totalFailures        uint64
-	openUntil            time.Time
-	latestBlock          uint64
-	latency              time.Duration
-	lastErr              error
-	inflight             atomic.Int64
+	cfg                  config.ProviderConfig // 端点配置
+	httpClient, wsClient *transport.Client     // 传输层客户端
+	connMu               sync.Mutex            // 连接锁
+	mu                   sync.RWMutex          // 锁
+	status               Status                // 端点状态
+	probeInFlight        bool                  // 传输中的探测包
+	failures, successes  int                   // 成功累计数 失败累积数
+	consistencyFailures  int                   // 一致性故障次数
+	totalFailures        uint64                // 失败累计数
+	openUntil            time.Time             // 开放至xxx
+	latestBlock          uint64                // 最新区块
+	latency              time.Duration         // 延迟秒数
+	lastErr              error                 // 最新错误
+	inflight             atomic.Int64          // 在途请求数
 }
 
-// NewEndpoint 拨号创建端点：HTTP 必需成功；WS 失败时标记为降级但保留端点（后续可重连）。
+// NewEndpoint 拨号创建端点：HTTP必需成功；WS失败时标记为降级但保留端点（后续可重连）。
 func NewEndpoint(ctx context.Context, c config.ProviderConfig) (*Endpoint, error) {
 	if ctx == nil {
 		ctx = context.Background()
@@ -99,7 +100,7 @@ func NewEndpoint(ctx context.Context, c config.ProviderConfig) (*Endpoint, error
 	return e, nil
 }
 
-// ensureWS 返回可用的 WS 客户端；已关闭或未建立时按需重连。
+// ensureWS 返回可用的WS客户端；已关闭或未建立时按需重连。
 func (e *Endpoint) ensureWS(ctx context.Context) (*transport.Client, error) {
 	e.connMu.Lock()
 	defer e.connMu.Unlock()
@@ -130,13 +131,16 @@ func (e *Endpoint) Priority() int { return e.cfg.Priority }
 // Weight 返回权重。
 func (e *Endpoint) Weight() int { return e.cfg.Weight }
 
-// HasHTTP 返回是否具备 HTTP 客户端。
+// HasHTTP 返回是否具备HTTP客户端。
 func (e *Endpoint) HasHTTP() bool { return e.httpClient != nil }
 
-// HasWS 返回是否配置了 WS 地址。
-func (e *Endpoint) HasWS() bool { return e.cfg.WSURL != "" }
+// HasWS 返回是否具备HTTP客户端。
+func (e *Endpoint) HasWS() bool { return e.wsClient != nil }
 
-// Call 通过 HTTP 发起一次 RPC 调用（维护在途请求计数）。
+// HasWSConf 返回是否配置了WS地址。
+func (e *Endpoint) HasWSConf() bool { return e.cfg.WSURL != "" }
+
+// Call 通过HTTP发起一次RPC调用（维护在途请求计数）。
 func (e *Endpoint) Call(ctx context.Context, result any, method string, args ...any) error {
 	if e.httpClient == nil {
 		return errors.New("http endpoint unavailable")
@@ -146,7 +150,7 @@ func (e *Endpoint) Call(ctx context.Context, result any, method string, args ...
 	return e.httpClient.Call(ctx, result, method, args...)
 }
 
-// CallWS 通过 WebSocket 发起一次 RPC 调用（按需建立连接）。
+// CallWS 通过WebSocket发起一次RPC调用（按需建立连接）。
 func (e *Endpoint) CallWS(ctx context.Context, result any, method string, args ...any) error {
 	c, err := e.ensureWS(ctx)
 	if err != nil {
@@ -157,7 +161,7 @@ func (e *Endpoint) CallWS(ctx context.Context, result any, method string, args .
 	return c.Call(ctx, result, method, args...)
 }
 
-// Batch 通过 HTTP 发起一次 JSON-RPC 批处理。
+// Batch 通过HTTP发起一次 JSON-RPC 批处理。
 func (e *Endpoint) Batch(ctx context.Context, elems []rpc.BatchElem) error {
 	if e.httpClient == nil {
 		return errors.New("http endpoint unavailable")
@@ -165,7 +169,7 @@ func (e *Endpoint) Batch(ctx context.Context, elems []rpc.BatchElem) error {
 	return e.httpClient.Batch(ctx, elems)
 }
 
-// Subscribe 通过 WS 建立订阅（按需建立连接）。
+// Subscribe 通过WS建立订阅（按需建立连接）。
 func (e *Endpoint) Subscribe(ctx context.Context, ns string, ch any, args ...any) (*rpc.ClientSubscription, error) {
 	c, err := e.ensureWS(ctx)
 	if err != nil {
@@ -195,25 +199,26 @@ func (e *Endpoint) Snapshot() Snapshot {
 	if e.cfg.HTTPURL == "" {
 		transportName = "websocket"
 	}
-	return Snapshot{ID: e.ID(), Transport: transportName, Priority: e.Priority(), Weight: e.Weight(), Status: e.status, Failures: e.failures, ConsistencyFailures: e.consistencyFailures, TotalFailures: e.totalFailures, Successes: e.successes, OpenUntil: e.openUntil, LatestBlock: e.latestBlock, Latency: e.latency, LastError: errorString(e.lastErr), InFlight: e.inflight.Load()}
+	return Snapshot{ID: e.ID(), Transport: transportName, Priority: e.Priority(), Weight: e.Weight(), Status: e.status, Failures: e.failures, ConsistencyFailures: e.consistencyFailures, TotalFailures: e.totalFailures, Successes: e.successes, OpenUntil: e.openUntil, LatestBlock: e.latestBlock, Latency: e.latency, LastError: errorString(e.lastErr), InFlight: e.inflight.Load(), ProbeInFlight: e.probeInFlight}
 }
 
 // Snapshot 是端点健康状态的对外快照。
 type Snapshot struct {
-	ID                  string        `json:"id"`
-	Transport           string        `json:"transport"`
-	Priority            int           `json:"priority"`
-	Weight              int           `json:"weight"`
-	Status              Status        `json:"status"`
-	Failures            int           `json:"consecutive_failures"`
-	ConsistencyFailures int           `json:"consistency_failures"`
-	TotalFailures       uint64        `json:"total_failures"`
-	Successes           int           `json:"successes"`
-	OpenUntil           time.Time     `json:"open_until"`
-	LatestBlock         uint64        `json:"latest_block"`
-	Latency             time.Duration `json:"latency"`
-	LastError           string        `json:"last_error"`
-	InFlight            int64         `json:"in_flight"`
+	ID                  string        `json:"id"`                   // 端点Id
+	Transport           string        `json:"transport"`            // 传输层类别
+	Priority            int           `json:"priority"`             // 优先级
+	Weight              int           `json:"weight"`               // 权重
+	Status              Status        `json:"status"`               // 状态
+	Failures            int           `json:"consecutive_failures"` // 连续失败次数
+	ConsistencyFailures int           `json:"consistency_failures"` // 一致性失败次数
+	TotalFailures       uint64        `json:"total_failures"`       // 累计失败次数
+	Successes           int           `json:"successes"`            // 成功数
+	OpenUntil           time.Time     `json:"open_until"`           // 开放至xxx
+	LatestBlock         uint64        `json:"latest_block"`         // 最新区块
+	Latency             time.Duration `json:"latency"`              // 延迟
+	LastError           string        `json:"last_error"`           // 最新错误
+	InFlight            int64         `json:"in_flight"`            // 在途请求数
+	ProbeInFlight       bool          `json:"-"`                    // 传输中的探测包
 }
 
 func errorString(e error) string {
@@ -223,7 +228,7 @@ func errorString(e error) string {
 	return e.Error()
 }
 
-// Record 依据一次调用结果更新端点熔断状态（指数滑动平均延迟）。
+// Record 记录一次端点请求相关状态 依据一次调用结果后更新端点熔断状态（指数滑动平均延迟）。
 func (e *Endpoint) Record(err error, lat time.Duration, failThreshold, successThreshold int, cooldown time.Duration) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -260,7 +265,7 @@ func (e *Endpoint) Record(err error, lat time.Duration, failThreshold, successTh
 	}
 }
 
-// RecordConsistency 记录一次区块一致性检查结果（与普通调用失败分开计数）。
+// RecordConsistency 记录一次端点一致性相关状态 记录一次区块一致性检查结果（与普通调用失败分开计数）。
 func (e *Endpoint) RecordConsistency(err error, failThreshold int, cooldown time.Duration) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -319,13 +324,13 @@ func (e *Endpoint) Acquire(now time.Time) bool {
 	return true
 }
 
-// Pool 是同一传输（HTTP 或 WS）下的一组端点，负责选择与记录。
+// Pool 端点池 是同一传输（HTTP或WS）下的一组端点，负责选择与记录。
 type Pool struct {
 	mu                              sync.RWMutex
 	items                           map[string]*Endpoint
-	failThreshold, successThreshold int
-	cooldown                        time.Duration
-	selector                        Selector
+	failThreshold, successThreshold int           // 失败阈值 成功阈值
+	cooldown                        time.Duration // 冷却时间
+	selector                        Selector      // 端点选择器 实现不同的端点选中策略
 }
 
 // NewPool 创建端点池并设置熔断阈值、冷却时间与默认选择器。
@@ -380,33 +385,39 @@ func (p *Pool) All() []*Endpoint {
 }
 
 // Select 选出当前可用的端点并按选择器排序；启用区块监控时剔除落后过大的端点。
+// 每个端点只取一次快照，避免对同一端点反复加锁取 Snapshot / Available。
 func (p *Pool) Select(maxLag uint64) []*Endpoint {
 	all := p.All()
 	now := time.Now()
-	var out []*Endpoint
+
+	snaps := make([]Snapshot, len(all))
 	var best uint64
-	for _, e := range all {
-		s := e.Snapshot()
-		if s.Status != Open && s.LatestBlock > best {
-			best = s.LatestBlock
+	for i, e := range all {
+		snaps[i] = e.Snapshot()
+		if snaps[i].Status != Open && snaps[i].LatestBlock > best {
+			best = snaps[i].LatestBlock
 		}
 	}
 	if best == 0 {
-		for _, e := range all {
-			if b := e.Snapshot().LatestBlock; b > best {
-				best = b
+		for i := range snaps {
+			if snaps[i].LatestBlock > best {
+				best = snaps[i].LatestBlock
 			}
 		}
 	}
-	for _, e := range all {
-		b := e.Snapshot().LatestBlock
-		if maxLag > 0 && best > 0 && (b == 0 || (b < best && best-b > maxLag)) {
+
+	var out []*Endpoint
+	for i, e := range all {
+		s := snaps[i]
+		if maxLag > 0 && best > 0 && (s.LatestBlock == 0 || (s.LatestBlock < best && best-s.LatestBlock > maxLag)) {
 			continue
 		}
-		if e.Available(now) {
-			out = append(out, e)
+		if !snapshotAvailable(s, now) {
+			continue
 		}
+		out = append(out, e)
 	}
+
 	p.mu.RLock()
 	selector := p.selector
 	p.mu.RUnlock()
@@ -414,6 +425,17 @@ func (p *Pool) Select(maxLag uint64) []*Endpoint {
 		out = selector.Order(out)
 	}
 	return out
+}
+
+// snapshotAvailable 依据快照判断端点是否可被选中（熔断冷却期或半开试探中则不可用）。
+func snapshotAvailable(s Snapshot, now time.Time) bool {
+	if s.Status == Open && now.Before(s.OpenUntil) {
+		return false
+	}
+	if s.Status == HalfOpen && s.ProbeInFlight {
+		return false
+	}
+	return true
 }
 
 // SetSelector 安装自定义选择器。

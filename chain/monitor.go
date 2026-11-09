@@ -1,5 +1,7 @@
 package chain
 
+// 监控provider
+
 import (
 	"context"
 	"fmt"
@@ -53,7 +55,7 @@ func (i *Instance) checkProviders() {
 		if !e.Acquire(time.Now()) {
 			continue
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), i.cfg.Health.Timeout.Value())
+		ctx, cancel := context.WithTimeout(i.ctx, i.cfg.Health.Timeout.Value())
 		start := time.Now()
 		var id hexutil.Uint64
 		err := e.Call(ctx, &id, "eth_chainId")
@@ -75,7 +77,7 @@ func (i *Instance) checkProviders() {
 		if !e.Acquire(time.Now()) {
 			continue
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), i.cfg.Health.Timeout.Value())
+		ctx, cancel := context.WithTimeout(i.ctx, i.cfg.Health.Timeout.Value())
 		start := time.Now()
 		var id hexutil.Uint64
 		err := e.CallWS(ctx, &id, "eth_chainId")
@@ -168,7 +170,7 @@ func (i *Instance) checkPoolConsistency(pool *provider.Pool, websocket bool) {
 	answers := make([]answer, 0, len(eligible))
 	counts := make(map[common.Hash]int)
 	for _, ep := range eligible {
-		ctx, cancel := context.WithTimeout(context.Background(), i.cfg.Health.Timeout.Value())
+		ctx, cancel := context.WithTimeout(i.ctx, i.cfg.Health.Timeout.Value())
 		start := time.Now()
 		var h *types.Header
 		blockArg := hexutil.EncodeUint64(minHeight)

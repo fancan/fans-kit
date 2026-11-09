@@ -1,4 +1,4 @@
-// Package chain 提供一个零侵入、多链的以太坊 JSON-RPC 门面。
+// Package chain 提供一个零侵入、多链的以太坊JSON-RPC门面。
 //
 // 业务模块只需 import 本包并通过 Init / InitFile 传入配置文件即可开箱即用，
 // 无需注入实例，也无需自行管理不同 RPC 提供商；底层同时支持 HTTP(S) 与
@@ -7,6 +7,7 @@ package chain
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math/big"
@@ -87,8 +88,13 @@ func (m *Manager) Get(name string) (*Instance, error) {
 	return i, nil
 }
 
-// Default 返回默认链实例。
-func (m *Manager) Default() (*Instance, error) { return m.Get(m.defaultName) }
+// Default 返回默认链实例（defaultName 可能被 AddChain/RemoveChain 并发修改，须加锁读取）。
+func (m *Manager) Default() (*Instance, error) {
+	m.mu.RLock()
+	name := m.defaultName
+	m.mu.RUnlock()
+	return m.Get(name)
+}
 
 // AddChain 运行期动态新增一条链（双重检查，避免与并发新增冲突）。
 func (m *Manager) AddChain(name string, cfg ChainConfig) error {
@@ -479,4 +485,184 @@ func SetWSSelector(chainName string, selector provider.Selector) error {
 	}
 	i.SetWSSelector(selector)
 	return nil
+}
+
+// SendRawTransaction 对默认链广播一笔已签名交易（0x 前缀 hex 编码）。
+func SendRawTransaction(ctx context.Context, raw []byte) (common.Hash, error) {
+	i, e := current()
+	if e != nil {
+		return common.Hash{}, e
+	}
+	return i.SendRawTransaction(ctx, raw)
+}
+
+// SendRawTransactionOn 对指定链广播一笔已签名交易。
+func SendRawTransactionOn(ctx context.Context, chainName string, raw []byte) (common.Hash, error) {
+	i, e := On(chainName)
+	if e != nil {
+		return common.Hash{}, e
+	}
+	return i.SendRawTransaction(ctx, raw)
+}
+
+// TransactionByHash 返回默认链上指定哈希的交易及其 pending 状态。
+func TransactionByHash(ctx context.Context, hash common.Hash) (*types.Transaction, bool, error) {
+	i, e := current()
+	if e != nil {
+		return nil, false, e
+	}
+	return i.TransactionByHash(ctx, hash)
+}
+
+// TransactionByHashOn 返回指定链上指定哈希的交易及其 pending 状态。
+func TransactionByHashOn(ctx context.Context, chainName string, hash common.Hash) (*types.Transaction, bool, error) {
+	i, e := On(chainName)
+	if e != nil {
+		return nil, false, e
+	}
+	return i.TransactionByHash(ctx, hash)
+}
+
+// RawTransactionByHash 返回默认链上指定哈希的原始交易字节。
+func RawTransactionByHash(ctx context.Context, hash common.Hash) (string, error) {
+	i, e := current()
+	if e != nil {
+		return "", e
+	}
+	return i.RawTransactionByHash(ctx, hash)
+}
+
+// RawTransactionByHashOn 返回指定链上指定哈希的原始交易字节。
+func RawTransactionByHashOn(ctx context.Context, chainName string, hash common.Hash) (string, error) {
+	i, e := On(chainName)
+	if e != nil {
+		return "", e
+	}
+	return i.RawTransactionByHash(ctx, hash)
+}
+
+// PendingNonceAt 返回默认链上地址的 pending nonce。
+func PendingNonceAt(ctx context.Context, addr common.Address) (uint64, error) {
+	i, e := current()
+	if e != nil {
+		return 0, e
+	}
+	return i.PendingNonceAt(ctx, addr)
+}
+
+// PendingNonceAtOn 返回指定链上地址的 pending nonce。
+func PendingNonceAtOn(ctx context.Context, chainName string, addr common.Address) (uint64, error) {
+	i, e := On(chainName)
+	if e != nil {
+		return 0, e
+	}
+	return i.PendingNonceAt(ctx, addr)
+}
+
+// SuggestGasPrice 返回默认链当前建议 gas 价格。
+func SuggestGasPrice(ctx context.Context) (*big.Int, error) {
+	i, e := current()
+	if e != nil {
+		return nil, e
+	}
+	return i.SuggestGasPrice(ctx)
+}
+
+// SuggestGasPriceOn 返回指定链当前建议 gas 价格。
+func SuggestGasPriceOn(ctx context.Context, chainName string) (*big.Int, error) {
+	i, e := On(chainName)
+	if e != nil {
+		return nil, e
+	}
+	return i.SuggestGasPrice(ctx)
+}
+
+// TraceCall 对默认链执行 debug_traceCall（如 callTracer），返回原始 trace JSON。
+func TraceCall(ctx context.Context, msg ethereum.CallMsg, tracer string, tracerConfig any) (json.RawMessage, error) {
+	i, e := current()
+	if e != nil {
+		return nil, e
+	}
+	return i.TraceCall(ctx, msg, tracer, tracerConfig)
+}
+
+// TraceCallOn 对指定链执行 debug_traceCall。
+func TraceCallOn(ctx context.Context, chainName string, msg ethereum.CallMsg, tracer string, tracerConfig any) (json.RawMessage, error) {
+	i, e := On(chainName)
+	if e != nil {
+		return nil, e
+	}
+	return i.TraceCall(ctx, msg, tracer, tracerConfig)
+}
+
+// HeadStream 订阅默认链的新区块头，返回区块号通道（自动重连）。
+func HeadStream(ctx context.Context) (<-chan uint64, error) {
+	i, e := current()
+	if e != nil {
+		return nil, e
+	}
+	return i.HeadStream(ctx)
+}
+
+// HeadStreamOn 订阅指定链的新区块头，返回区块号通道（自动重连）。
+func HeadStreamOn(ctx context.Context, chainName string) (<-chan uint64, error) {
+	i, e := On(chainName)
+	if e != nil {
+		return nil, e
+	}
+	return i.HeadStream(ctx)
+}
+
+// PendingTxStream 订阅默认链的 pending 交易哈希流（自动重连）。
+func PendingTxStream(ctx context.Context) (<-chan common.Hash, error) {
+	i, e := current()
+	if e != nil {
+		return nil, e
+	}
+	return i.PendingTxStream(ctx)
+}
+
+// PendingTxStreamOn 订阅指定链的 pending 交易哈希流（自动重连）。
+func PendingTxStreamOn(ctx context.Context, chainName string) (<-chan common.Hash, error) {
+	i, e := On(chainName)
+	if e != nil {
+		return nil, e
+	}
+	return i.PendingTxStream(ctx)
+}
+
+// BatchCall 对默认链执行批量 eth_call（逐元素 revert 容忍）。
+func BatchCall(ctx context.Context, calls []CallArg) ([][]byte, error) {
+	i, e := current()
+	if e != nil {
+		return nil, e
+	}
+	return i.BatchCall(ctx, calls)
+}
+
+// BatchCallOn 对指定链执行批量 eth_call（逐元素 revert 容忍）。
+func BatchCallOn(ctx context.Context, chainName string, calls []CallArg) ([][]byte, error) {
+	i, e := On(chainName)
+	if e != nil {
+		return nil, e
+	}
+	return i.BatchCall(ctx, calls)
+}
+
+// TokenInfo 批量获取默认链上一批 ERC20 地址的 symbol/name/decimals。
+func TokenInfo(ctx context.Context, addrs []common.Address) (map[common.Address]*Token, error) {
+	i, e := current()
+	if e != nil {
+		return nil, e
+	}
+	return i.TokenInfo(ctx, addrs)
+}
+
+// TokenInfoOn 批量获取指定链上一批 ERC20 地址的 symbol/name/decimals。
+func TokenInfoOn(ctx context.Context, chainName string, addrs []common.Address) (map[common.Address]*Token, error) {
+	i, e := On(chainName)
+	if e != nil {
+		return nil, e
+	}
+	return i.TokenInfo(ctx, addrs)
 }

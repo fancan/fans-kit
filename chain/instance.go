@@ -12,7 +12,7 @@ import (
 	"github.com/fancan/fans-kit/chain/provider"
 )
 
-// Instance 表示一条链的运行时实例：持有独立的 HTTP/WS 提供商池、
+// Instance 表示一条链的运行时实例：持有独立的HTTP/WS提供商池、
 // 健康检查/区块监控后台循环以及订阅的生命周期管理。
 type Instance struct {
 	name             string
@@ -30,7 +30,7 @@ type Instance struct {
 }
 
 // NewInstance 依据链配置创建实例：对每个提供商的 HTTP/WS 地址分别拨号并加入
-// 对应池（HTTP 为必需，WS 可选），随后按需启动健康检查/区块监控协程。
+// 对应池（HTTP为必需，WS可选），随后按需启动健康检查/区块监控协程。
 func NewInstance(name string, cfg config.ChainConfig, m *metrics.Registry) (*Instance, error) {
 	cfg = cfg.Normalized()
 	if err := cfg.Validate(); err != nil {
@@ -140,14 +140,14 @@ func (i *Instance) startSubscription(parent context.Context, run func(context.Co
 	return nil
 }
 
-// recordHTTP 记录一次 HTTP 调用的结果并刷新该提供商的监控指标。
+// recordHTTP 记录一 HTTP调用的结果并刷新该提供商的监控指标。
 func (i *Instance) recordHTTP(ep *provider.Endpoint, err error, latency time.Duration) {
 	i.httpPool.Record(ep, err, latency)
 	s := ep.Snapshot()
 	i.metrics.SetProvider(i.name, s.ID, s.Transport, s.Status.String(), s.LatestBlock, uint64(s.Latency), s.InFlight, s.TotalFailures, s.ConsistencyFailures)
 }
 
-// recordWS 记录一次 WebSocket 调用的结果并刷新该提供商的监控指标。
+// recordWS 记录一次WebSocket调用的结果并刷新该提供商的监控指标。
 func (i *Instance) recordWS(ep *provider.Endpoint, err error, latency time.Duration) {
 	i.wsPool.Record(ep, err, latency)
 	s := ep.Snapshot()

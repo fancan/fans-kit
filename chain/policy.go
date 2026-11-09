@@ -1,5 +1,7 @@
 package chain
 
+// 故障切换策略层
+
 import (
 	"encoding/json"
 	"errors"
@@ -14,7 +16,7 @@ type MethodPolicy struct {
 	Retryable  bool          // 是否允许重试
 	Failover   bool          // 是否允许切换到其他提供商
 	MaxRetries int           // 最大重试次数
-	Timeout    time.Duration // 单次调用超时（0 表示使用全局 HTTP 超时）
+	Timeout    time.Duration // 单次调用超时（0 表示使用全局HTTP超时）
 }
 
 var methodPolicies = struct {
@@ -22,23 +24,23 @@ var methodPolicies = struct {
 	values map[string]MethodPolicy
 }{values: make(map[string]MethodPolicy)}
 
-// RegisterMethodPolicy 为某个精确的 RPC 方法注册覆盖策略。
+// RegisterMethodPolicy 为某个精确的RPC方法注册切换策略。
 func RegisterMethodPolicy(method string, policy MethodPolicy) {
 	methodPolicies.Lock()
 	methodPolicies.values[method] = policy
 	methodPolicies.Unlock()
 }
 
-// UnregisterMethodPolicy 移除某个方法的策略覆盖。
+// UnregisterMethodPolicy 移除某个方法的切换策略。
 func UnregisterMethodPolicy(method string) {
 	methodPolicies.Lock()
 	delete(methodPolicies.values, method)
 	methodPolicies.Unlock()
 }
 
-// DefaultMethodPolicy 返回某方法的默认策略：
+// DefaultMethodPolicy 返回某方法的默认切换策略：
 // 读方法默认可重试/可切换；eth_send*/personal_/miner_ 等写方法默认不重放；
-// debug_/trace_ 等重方法限制最多重试 1 次。
+// debug_/trace_ 等重方法限制最多重试1次。
 func DefaultMethodPolicy(method string, max int) MethodPolicy {
 	methodPolicies.RLock()
 	override, ok := methodPolicies.values[method]
@@ -61,6 +63,9 @@ func DefaultMethodPolicy(method string, max int) MethodPolicy {
 	return p
 }
 
+// retryableSubstrings 是判定“可重试”传输错误的子串集合
+var retryableSubstrings = []string{"connection refused", "connection reset", "broken pipe", "i/o timeout", "timeout", "temporarily unavailable", "too many requests", "http 408", "http 429", "http 500", "http 502", "http 503", "http 504", "status 408", "status 429", "status 500", "status 502", "status 503", "status 504", "eof", "server misbehaving", "rate limit", "limit exceeded", "-32005"}
+
 // retryableError 判断一个传输层错误是否值得重试（限流、超时、连接重置、5xx 等）。
 func retryableError(err error) bool {
 	if err == nil {
@@ -73,7 +78,7 @@ func retryableError(err error) bool {
 		return ne.Timeout() || ne.Temporary()
 	}
 	s := strings.ToLower(err.Error())
-	for _, v := range []string{"connection refused", "connection reset", "broken pipe", "i/o timeout", "timeout", "temporarily unavailable", "too many requests", "http 408", "http 429", "http 500", "http 502", "http 503", "http 504", "status 408", "status 429", "status 500", "status 502", "status 503", "status 504", "eof", "server misbehaving", "rate limit", "limit exceeded", "-32005"} {
+	for _, v := range retryableSubstrings {
 		if strings.Contains(s, v) {
 			return true
 		}

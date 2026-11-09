@@ -1,6 +1,22 @@
-// Package metrics 提供一个轻量的 Prometheus 文本格式暴露，
-// 不强加进程级 prometheus registry 给宿主应用。
 package metrics
+
+// 提供一个轻量的Prometheus文本格式暴露(不强加进程级prometheus registry给宿主应用)
+// 监控指标体系：
+// 1、RPC服务商级别：
+//       1、该供应商当前最新的健康状态
+//       2、该供应商当前最新区块
+//       3、该供应商的延迟秒数
+//       4、该供应商的在途请求数
+//       5、该供应商的累计失败数
+//       6、该供应商的累计一致性故障数
+// 2、请求级别：
+//       1、该请求的次数
+//       2、该请求的错误次数
+//       3、该请求的重试次数
+//       4、该请求延迟的纳秒数
+//       5、该请求的延迟次数
+// 监控指标注入：
+// 1、在executor层，链交互处收口处注入
 
 import (
 	"fmt"
@@ -11,29 +27,34 @@ import (
 	"sync/atomic"
 )
 
+// 调用一次RPC的唯一标识 [链,提供商,方法,结果] outcome=success/error/rpc_error/retry
 type key struct{ chain, provider, method, outcome string }
+
+// 提供服务的供应商唯一标识 [链,提供商,传输层类别] transport=http/websocket
 type providerKey struct{ chain, provider, transport string }
+
+// 服务供应商状态
 type providerState struct {
-	healthy             float64
-	latestBlock         uint64
-	latencySeconds      float64
-	inflight            int64
-	totalFailures       uint64
-	consistencyFailures int
+	healthy             float64 // 健康状态
+	latestBlock         uint64  // 最新区块
+	latencySeconds      float64 // 延迟秒数
+	inflight            int64   // 在途请求数
+	totalFailures       uint64  // 累计失败数
+	consistencyFailures int     // 一致性故障累计数
 }
 
-// Counters 是一组按 label 聚合的原子计数器。
+// Counters 是一组按label聚合的原子计数器。
 type Counters struct {
-	Requests, Errors, Retries atomic.Uint64
-	LatencyNanos              atomic.Uint64
-	LatencyCount              atomic.Uint64
+	Requests, Errors, Retries atomic.Uint64 // 请求次数 错误次数 重试次数
+	LatencyNanos              atomic.Uint64 // 延迟纳秒
+	LatencyCount              atomic.Uint64 // 延迟次数
 }
 
-// Registry 保存 RPC 调用计数器与提供商状态，供文本格式输出。
+// Registry 注册监控指标体系 保存RPC调用计数器与提供商状态，供文本格式输出。
 type Registry struct {
 	mu        sync.RWMutex
-	values    map[key]*Counters
-	providers map[providerKey]providerState
+	values    map[key]*Counters             // 每次RPC的统计计数器
+	providers map[providerKey]providerState // 每个服务供应商的统计计数器
 }
 
 // New 创建空的指标注册表。
@@ -41,7 +62,7 @@ func New() *Registry {
 	return &Registry{values: make(map[key]*Counters), providers: make(map[providerKey]providerState)}
 }
 
-// get 返回（必要时创建）指定 label 的计数器。
+// get 通过RPC请求key获取该请求的计数器信息
 func (r *Registry) get(k key) *Counters {
 	r.mu.RLock()
 	v := r.values[k]
@@ -58,7 +79,7 @@ func (r *Registry) get(k key) *Counters {
 	return v
 }
 
-// Observe 记录一次 RPC 调用的结果（outcome 为 success/error/rpc_error 等）。
+// Observe 记录一次RPC调用的结果（outcome 为 success/error/rpc_error 等）。
 func (r *Registry) Observe(chain, provider, method, outcome string, ns uint64) {
 	c := r.get(key{chain, provider, method, outcome})
 	c.Requests.Add(1)
@@ -69,12 +90,12 @@ func (r *Registry) Observe(chain, provider, method, outcome string, ns uint64) {
 	c.LatencyCount.Add(1)
 }
 
-// Retry 记录一次重试。
+// Retry 记录一次RPC调用的重试。
 func (r *Registry) Retry(chain, provider, method string) {
 	r.get(key{chain, provider, method, "retry"}).Retries.Add(1)
 }
 
-// SetProvider 更新某提供商的最新状态快照。
+// SetProvider 记录一次服务提供商的统计状态  更新某提供商的最新状态快照。
 func (r *Registry) SetProvider(chain, provider, transport, status string, latestBlock uint64, latencyNanos uint64, inflight int64, totalFailures uint64, consistencyFailures int) {
 	healthy := float64(0)
 	if status == "healthy" {

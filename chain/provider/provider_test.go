@@ -8,6 +8,7 @@ import (
 	"github.com/fancan/fans-kit/chain/config"
 )
 
+// 断路器半开状态允许进行一次探测
 func TestCircuitBreakerHalfOpenAllowsOneProbe(t *testing.T) {
 	ep := &Endpoint{cfg: config.ProviderConfig{Name: "p"}, status: Healthy}
 	ep.Record(errors.New("network down"), time.Millisecond, 2, 2, time.Second)
@@ -34,6 +35,7 @@ func TestCircuitBreakerHalfOpenAllowsOneProbe(t *testing.T) {
 	}
 }
 
+// 选择器测试 优先延迟选择器：优先选择健康节点，其次按优先级选择
 func TestPriorityLatencySelectorPrefersHealthyThenPriority(t *testing.T) {
 	slowPrimary := &Endpoint{cfg: config.ProviderConfig{Name: "primary", Priority: 1, Weight: 1}, status: Healthy, latency: 100 * time.Millisecond}
 	fastBackup := &Endpoint{cfg: config.ProviderConfig{Name: "backup", Priority: 2, Weight: 1}, status: Healthy, latency: 5 * time.Millisecond}

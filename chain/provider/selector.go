@@ -11,24 +11,41 @@ type Selector interface {
 // 在途请求数排序，返回副本切片。
 type PriorityLatencySelector struct{}
 
+type scoredEndpoint struct {
+	ep   *Endpoint
+	snap Snapshot
+	rank int
+}
+
+// Order 端点排序 排序策略：优先端点状态是健康的，再按照端点优先级，再按照延迟低，再按照在途请求数排序
 func (PriorityLatencySelector) Order(candidates []*Endpoint) []*Endpoint {
-	out := append([]*Endpoint(nil), candidates...)
-	sort.SliceStable(out, func(i, j int) bool {
-		a, b := out[i].Snapshot(), out[j].Snapshot()
-		ar, br := statusRank(a.Status), statusRank(b.Status)
-		if ar != br {
-			return ar < br
+	// 每个端点只取一次快照，避免在排序比较器中反复加锁取 Snapshot（O(n log n) 次 → O(n) 次）。
+	items := make([]scoredEndpoint, len(candidates))
+	for i, ep := range candidates {
+		s := ep.Snapshot()
+		items[i] = scoredEndpoint{ep: ep, snap: s, rank: statusRank(s.Status)}
+	}
+
+	sort.SliceStable(items, func(i, j int) bool {
+		a, b := items[i], items[j]
+		if a.rank != b.rank {
+			return a.rank < b.rank
 		}
-		if a.Priority != b.Priority {
-			return a.Priority < b.Priority
+		if a.snap.Priority != b.snap.Priority {
+			return a.snap.Priority < b.snap.Priority
 		}
-		as := float64(a.Latency) / float64(maxInt(a.Weight, 1))
-		bs := float64(b.Latency) / float64(maxInt(b.Weight, 1))
+		as := float64(a.snap.Latency) / float64(maxInt(a.snap.Weight, 1))
+		bs := float64(b.snap.Latency) / float64(maxInt(b.snap.Weight, 1))
 		if as != bs {
 			return as < bs
 		}
-		return a.InFlight < b.InFlight
+		return a.snap.InFlight < b.snap.InFlight
 	})
+
+	out := make([]*Endpoint, len(items))
+	for i := range items {
+		out[i] = items[i].ep
+	}
 	return out
 }
 

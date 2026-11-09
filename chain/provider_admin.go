@@ -11,8 +11,8 @@ import (
 	"github.com/fancan/fans-kit/chain/provider"
 )
 
-// AddProvider 运行期向链动态新增提供商（HTTP/WS 分别拨号并入池）。
-// 若 WS 部分失败会回滚已加入的 HTTP 端点，保证不会残留半加入状态。
+// AddProvider 运行期向链动态新增提供商（HTTP/WS分别拨号并入池）。
+// 注意：若WS部分失败会回滚已加入的HTTP端点，保证不会残留半加入状态。
 func (i *Instance) AddProvider(ctx context.Context, p config.ProviderConfig) error {
 	if ctx == nil {
 		ctx = context.Background()
@@ -75,7 +75,7 @@ func (i *Instance) AddProvider(ctx context.Context, p config.ProviderConfig) err
 	return nil
 }
 
-// RemoveProvider 运行期移除指定提供商（HTTP/WS 池一并移除）并关闭其连接。
+// RemoveProvider 运行期移除指定提供商（HTTP/WS池一并移除）并关闭其连接。
 func (i *Instance) RemoveProvider(id string) error {
 	var errs []error
 	if i.httpPool.Get(id) != nil {
@@ -98,8 +98,8 @@ func (i *Instance) Providers() []provider.Snapshot {
 	return out
 }
 
-// SetHTTPSelector 为 HTTP RPC 调用安装自定义提供商选择策略。
+// SetHTTPSelector 为HTTP RPC调用安装自定义提供商选择策略。
 func (i *Instance) SetHTTPSelector(s provider.Selector) { i.httpPool.SetSelector(s) }
 
-// SetWSSelector 为 WebSocket 连接安装自定义提供商选择策略。
+// SetWSSelector 为WebSocket连接安装自定义提供商选择策略。
 func (i *Instance) SetWSSelector(s provider.Selector) { i.wsPool.SetSelector(s) }

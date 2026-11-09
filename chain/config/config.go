@@ -1,5 +1,7 @@
 package config
 
+// 解析chain模块的配置，使用者根据example.yaml的配置配置，会按照规则解析出来
+
 import (
 	"fmt"
 	"net/url"
@@ -11,7 +13,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Duration 是对 time.Duration 的包装，支持在 YAML 中写作 "10s" 这样的字符串，
+// Duration 是对time.Duration的包装，支持在YAML中写作"10s"这样的字符串，
 // 或写作纳秒整数。
 type Duration time.Duration
 
@@ -37,7 +39,7 @@ func (d *Duration) UnmarshalYAML(n *yaml.Node) error {
 	return nil
 }
 
-// Value 返回标准 time.Duration。
+// Value 返回标准time.Duration。
 func (d Duration) Value() time.Duration { return time.Duration(d) }
 
 // Config 是链模块的顶层配置。
@@ -58,7 +60,7 @@ type ChainConfig struct {
 	Recovery  RecoveryConfig   `yaml:"log_recovery"`
 }
 
-// ProviderConfig 是单个 RPC 提供商的配置，可同时含 HTTP 与 WS 地址。
+// ProviderConfig 是单个RPC提供商的配置，可同时含 HTTP 与 WS 地址。
 type ProviderConfig struct {
 	Name         string            `yaml:"name"`
 	Priority     int               `yaml:"priority"` // 优先级（越小越优先）
@@ -70,52 +72,52 @@ type ProviderConfig struct {
 	Headers      map[string]string `yaml:"headers"`        // 额外请求头
 }
 
-// HTTPConfig 是 HTTP RPC 的配置。
+// HTTPConfig 是HTTP RPC的配置。
 type HTTPConfig struct {
 	Timeout      Duration `yaml:"timeout"`        // 单次调用超时
 	MaxRetries   int      `yaml:"max_retries"`    // 最大重试次数
 	MaxBatchSize int      `yaml:"max_batch_size"` // 批处理最大元素数
 }
 
-// WSConfig 是 WebSocket 的配置。
+// WSConfig 是WebSocket的配置。
 type WSConfig struct {
 	ReconnectInterval Duration `yaml:"reconnect_interval"` // 重连间隔
 	SendBuffer        int      `yaml:"send_buffer"`        // 日志发送缓冲
 }
 
-// HealthConfig 是健康检查的配置。
+// HealthConfig 开启健康检查的配置。
 type HealthConfig struct {
-	Enabled          bool     `yaml:"enabled"`
-	Interval         Duration `yaml:"interval"`
-	Timeout          Duration `yaml:"timeout"`
+	Enabled          bool     `yaml:"enabled"`           // 是否可用
+	Interval         Duration `yaml:"interval"`          // 端点健康检查间隔
+	Timeout          Duration `yaml:"timeout"`           // 超时时间
 	FailureThreshold int      `yaml:"failure_threshold"` // 连续失败多少次触发熔断
 	SuccessThreshold int      `yaml:"success_threshold"` // 连续成功多少次恢复
 	Cooldown         Duration `yaml:"cooldown"`          // 熔断冷却时长
 }
 
-// BlockConfig 是区块监控的配置。
+// BlockConfig 开启区块监控的配置。
 type BlockConfig struct {
-	Enabled          bool     `yaml:"enabled"`
-	Interval         Duration `yaml:"interval"`
+	Enabled          bool     `yaml:"enabled"`           // 是否可用
+	Interval         Duration `yaml:"interval"`          // 区块监控间隔
 	MaxLag           uint64   `yaml:"max_lag"`           // 允许的最大落后区块数
 	ConsistencyDepth uint64   `yaml:"consistency_depth"` // 一致性比较的确认深度
 }
 
 // RecoveryConfig 是日志恢复（重放/去重/重组回退）的配置。
 type RecoveryConfig struct {
-	Enabled       bool   `yaml:"enabled"`
-	MaxRange      uint64 `yaml:"max_range"`      // eth_getLogs 单段最大区间
+	Enabled       bool   `yaml:"enabled"`        // 是否可用
+	MaxRange      uint64 `yaml:"max_range"`      // eth_getLogs单段最大区间
 	DedupCapacity int    `yaml:"dedup_capacity"` // 去重集合容量
 	ReorgDepth    uint64 `yaml:"reorg_depth"`    // 重组回退窗口
 }
 
-// MetricsConfig 是 Prometheus 指标配置。
+// MetricsConfig 是Prometheus指标配置。
 type MetricsConfig struct {
-	Enabled bool   `yaml:"enabled"`
-	Path    string `yaml:"path"`
+	Enabled bool   `yaml:"enabled"` // 是否启用
+	Path    string `yaml:"path"`    // metrics路径开启的路径 默认值 /metrics
 }
 
-// LoadYAML 从文件路径读取并解析 YAML 配置。
+// LoadYAML 从文件路径读取并解析YAML配置。
 func LoadYAML(path string) (Config, error) {
 	b, e := os.ReadFile(path)
 	if e != nil {
@@ -124,7 +126,9 @@ func LoadYAML(path string) (Config, error) {
 	return ParseYAML(b)
 }
 
-// ParseYAML 解析 YAML 配置字节：应用默认值、展开环境变量并做基本校验。
+// ParseYAML 解析YAML配置字节
+// 1、应用默认值
+// 2、展开环境变量并做基本校验。
 func ParseYAML(b []byte) (Config, error) {
 	var c Config
 	if err := yaml.Unmarshal(b, &c); err != nil {
@@ -260,7 +264,7 @@ func defaults(c ChainConfig) ChainConfig {
 // Normalized 返回应用默认值后的配置副本。
 func (c ChainConfig) Normalized() ChainConfig { return defaults(c) }
 
-// Validate 校验链配置：至少一个提供商、名称唯一、HTTP/WS 地址 scheme 合法。
+// Validate 校验链配置：至少一个提供商、名称唯一、HTTP/WS地址scheme合法。
 func (c ChainConfig) Validate() error {
 	if len(c.Providers) == 0 {
 		return fmt.Errorf("at least one provider required")

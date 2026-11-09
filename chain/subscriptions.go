@@ -98,6 +98,77 @@ func (i *Instance) runSubscription(ctx context.Context, ep *provider.Endpoint, n
 	}
 }
 
+// HeadStream 订阅新区块头，返回区块号通道。内部复用 Subscribe 的自动重连逻辑；
+// 调用方取消或实例关闭时通道被关闭。无 WS 提供商时返回错误。
+func (i *Instance) HeadStream(ctx context.Context) (<-chan uint64, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	headerCh := make(chan *types.Header, i.cfg.WebSocket.SendBuffer)
+	if err := i.Subscribe(ctx, "eth", headerCh, "newHeads"); err != nil {
+		return nil, err
+	}
+	runCtx, cleanup := i.bindContext(ctx)
+	out := make(chan uint64, 64)
+	go func() {
+		defer close(out)
+		defer cleanup()
+		for {
+			select {
+			case <-runCtx.Done():
+				return
+			case h, ok := <-headerCh:
+				if !ok {
+					return
+				}
+				if h == nil {
+					continue
+				}
+				select {
+				case out <- h.Number.Uint64():
+				case <-runCtx.Done():
+					return
+				}
+			}
+		}
+	}()
+	return out, nil
+}
+
+// PendingTxStream 订阅公共内存池的 newPendingTransactions（pending tx hash 流）。
+// 语义与 HeadStream 一致：自动重连，调用方取消或实例关闭时通道被关闭。
+func (i *Instance) PendingTxStream(ctx context.Context) (<-chan common.Hash, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	hashCh := make(chan common.Hash, 1024)
+	if err := i.Subscribe(ctx, "eth", hashCh, "newPendingTransactions"); err != nil {
+		return nil, err
+	}
+	runCtx, cleanup := i.bindContext(ctx)
+	out := make(chan common.Hash, 1024)
+	go func() {
+		defer close(out)
+		defer cleanup()
+		for {
+			select {
+			case <-runCtx.Done():
+				return
+			case h, ok := <-hashCh:
+				if !ok {
+					return
+				}
+				select {
+				case out <- h:
+				case <-runCtx.Done():
+					return
+				}
+			}
+		}
+	}()
+	return out, nil
+}
+
 // SubscribeLogs 维护 eth_subscribe(logs) 流，并通过 eth_getLogs 补全缺口。
 // 通过 q.FromBlock 指定历史回放起点；为 nil 时从当前链头开始（启用日志恢复时，
 // 该链头在 WS 订阅建立后再回填）。ToBlock / BlockHash 不适用于实时订阅。
