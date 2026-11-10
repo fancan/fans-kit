@@ -39,7 +39,7 @@ type contextKeySpec struct {
 	fieldKey string
 }
 
-// 固定为包级变量，避免每次调用重复构造切片字面量。
+// 固定为包级变量
 var contextKeys = [...]contextKeySpec{
 	{LogIDKey, "logid"},
 	{ReqIDKey, "reqid"},
@@ -57,6 +57,8 @@ var contextGetterKeys = [...]stringKeySpec{
 	{LogIDKeyString, "logid"},
 	{ReqIDKeyString, "reqid"},
 	{RefIDKeyString, "refid"},
+	{TraceIDKeyString, "traceid"},
+	{SpanIDKeyString, "spanid"},
 }
 
 // 返回一些常用log字段

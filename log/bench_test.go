@@ -3,6 +3,8 @@ package log
 import (
 	"context"
 	"testing"
+
+	"github.com/fancan/fans-kit/log/api"
 )
 
 // 说明：以下基准以“级别被过滤”为主，测量门面调用链的固定开销与字段变参分配，
@@ -96,5 +98,62 @@ func BenchmarkInfoContextWithFields(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; b.Loop(); i++ {
 		InfoContext(ctx, "bench")
+	}
+}
+
+func BenchmarkInfoFiltered(b *testing.B) {
+	lg, err := New(Config{
+		Level:  InfoLevel,
+		Output: []string{"stdout"},
+	})
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer lg.Close()
+
+	b.ReportAllocs()
+	b.ResetTimer()
+
+	for i := 0; b.Loop(); i++ {
+		lg.Debug("filtered", Int("n", 1))
+	}
+}
+
+func BenchmarkInfoEnabled(b *testing.B) {
+	lg, err := New(Config{
+		Level:  DebugLevel,
+		Output: []string{"stdout"},
+	})
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer lg.Close()
+
+	b.ReportAllocs()
+	b.ResetTimer()
+
+	for i := 0; b.Loop(); i++ {
+		lg.Info("enabled", Int("n", 1))
+	}
+}
+
+func BenchmarkInfoContext(b *testing.B) {
+	lg, err := New(Config{
+		Level:  DebugLevel,
+		Output: []string{"stdout"},
+	})
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer lg.Close()
+
+	ctx := context.WithValue(context.Background(), api.TraceIDKey, "trace-1")
+	ctx = context.WithValue(ctx, api.SpanIDKey, "span-1")
+
+	b.ReportAllocs()
+	b.ResetTimer()
+
+	for i := 0; b.Loop(); i++ {
+		lg.InfoContext(ctx, "context log", api.Int("n", 1))
 	}
 }

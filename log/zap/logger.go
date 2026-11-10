@@ -453,9 +453,9 @@ func (l *Logger) Sync() error {
 	return l.core.Sync()
 }
 
-// Close 释放根 Logger 持有的文件 writer。
-// 只有根 Logger（New 创建）会真正关闭资源；派生 Logger（With / WithCallerSkip）
-// 共享同一份资源，其 Close 为无操作，避免误关闭共享文件句柄。
+// Close 释放根Logger持有的文件writer。
+// 只有根Logger（New 创建）会真正关闭资源；派生 Logger（With / WithCallerSkip）
+// 共享同一份资源，其Close为无操作，避免误关闭共享文件句柄。
 func (l *Logger) Close() error {
 	if l == nil || l.state == nil || !l.root {
 		return nil
@@ -487,6 +487,7 @@ func (l *Logger) Close() error {
 // 防止误删 time import；这里可根据后续时间字段扩展删除。
 var _ = time.RFC3339Nano
 
+// 防御性编程 较为显示定义zap.logger实现api.Logger接口
 var _ api.Logger = (*Logger)(nil)
 
 // WithCallerSkip 返回额外跳过 skip 帧 caller 的派生 Logger，

@@ -276,3 +276,23 @@ func TestFieldRoundTrip(t *testing.T) {
 		t.Errorf("any = %v", m["any"])
 	}
 }
+
+// 测试SetGlobal还没有关闭旧logger
+func TestSetGlobalDoesNotCloseOldLogger(t *testing.T) {
+	m1 := &mockLogger{}
+	m2 := &mockLogger{}
+
+	if err := SetGlobal(m1); err != nil {
+		t.Fatal(err)
+	}
+	if err := SetGlobal(m2); err != nil {
+		t.Fatal(err)
+	}
+
+	if m1.closed {
+		t.Fatal("SetGlobal must not close the replaced logger")
+	}
+	if m2.closed {
+		t.Fatal("SetGlobal must not close the current logger")
+	}
+}

@@ -131,9 +131,14 @@ func SetLevel(level Level) error {
 	return Global().SetLevel(level)
 }
 
-// 同步全局日志缓冲区。
+// 同步全局日志缓冲区。不释放底层资源
 func Sync() error {
 	return Global().Sync()
+}
+
+// Close 刷新日志并关闭全局 Logger，释放底层资源。
+func Close() error {
+	return Global().Close()
 }
 
 // With 创建带有固定字段的全局日志包装器。
