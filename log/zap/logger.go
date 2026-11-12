@@ -360,30 +360,18 @@ func (l *Logger) Error(msg string, fields ...api.Field) {
 }
 
 func (l *Logger) Debugf(format string, args ...any) {
-	if !l.Enabled(api.DebugLevel) {
-		return
-	}
 	l.write(api.DebugLevel, fmt.Sprintf(format, args...))
 }
 
 func (l *Logger) Infof(format string, args ...any) {
-	if !l.Enabled(api.InfoLevel) {
-		return
-	}
 	l.write(api.InfoLevel, fmt.Sprintf(format, args...))
 }
 
 func (l *Logger) Warnf(format string, args ...any) {
-	if !l.Enabled(api.WarnLevel) {
-		return
-	}
 	l.write(api.WarnLevel, fmt.Sprintf(format, args...))
 }
 
 func (l *Logger) Errorf(format string, args ...any) {
-	if !l.Enabled(api.ErrorLevel) {
-		return
-	}
 	l.write(api.ErrorLevel, fmt.Sprintf(format, args...))
 }
 
@@ -406,9 +394,6 @@ func (l *Logger) DebugContext(
 	msg string,
 	fields ...api.Field,
 ) {
-	if !l.Enabled(api.DebugLevel) {
-		return
-	}
 	l.write(api.DebugLevel, msg, mergeContextFields(ctx, fields)...)
 }
 
@@ -417,9 +402,6 @@ func (l *Logger) InfoContext(
 	msg string,
 	fields ...api.Field,
 ) {
-	if !l.Enabled(api.InfoLevel) {
-		return
-	}
 	l.write(api.InfoLevel, msg, mergeContextFields(ctx, fields)...)
 }
 
@@ -428,9 +410,6 @@ func (l *Logger) WarnContext(
 	msg string,
 	fields ...api.Field,
 ) {
-	if !l.Enabled(api.WarnLevel) {
-		return
-	}
 	l.write(api.WarnLevel, msg, mergeContextFields(ctx, fields)...)
 }
 
@@ -439,9 +418,6 @@ func (l *Logger) ErrorContext(
 	msg string,
 	fields ...api.Field,
 ) {
-	if !l.Enabled(api.ErrorLevel) {
-		return
-	}
 	l.write(api.ErrorLevel, msg, mergeContextFields(ctx, fields)...)
 }
 

@@ -7,10 +7,10 @@ import "context"
 
 // 这组logger接口有zap实现，未来切换日志引擎可以由别的日志引擎实现
 type Logger interface {
-	// 日志等级
+	// 根据日志等级判定该等级的日志是否可用
 	Enabled(level Level) bool
 
-	// 对外接口
+	// 结构化日志
 	Debug(msg string, fields ...Field)
 	Info(msg string, fields ...Field)
 	Warn(msg string, fields ...Field)
@@ -22,7 +22,7 @@ type Logger interface {
 	Warnf(format string, args ...any)
 	Errorf(format string, args ...any)
 
-	// Context 日志
+	// 带Context上下文日志
 	DebugContext(ctx context.Context, msg string, fields ...Field)
 	InfoContext(ctx context.Context, msg string, fields ...Field)
 	WarnContext(ctx context.Context, msg string, fields ...Field)
@@ -38,6 +38,6 @@ type Logger interface {
 	SetLevel(level Level) error
 
 	// 生命周期
-	Sync() error
-	Close() error
+	Sync() error  // 刷入存储
+	Close() error // 关闭logger释放资源
 }

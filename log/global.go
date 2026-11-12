@@ -22,32 +22,29 @@ type globalState struct {
 var global atomic.Pointer[globalState]
 
 var errNilLogger = errors.New("log: logger is nil")
+var errGlobalAlreadySet = errors.New("log: logger is seted")
 
 // SetGlobal 设置全局Logger。
-// 建议只在应用启动时调用一次；重复调用是并发安全的，并会关闭被替换的旧Logger。
+// 注意：只在应用启动时调用一次，在logger已经New好后调用一次
 func SetGlobal(logger Logger) error {
 	if logger == nil {
 		return errNilLogger
 	}
 
-	next := &globalState{
+	newGlobalState := &globalState{
 		logger: logger,
 		facade: logger.WithCallerSkip(1),
 	}
 
-	old := global.Swap(next)
-
-	// 关闭被替换掉的旧Logger，避免文件句柄泄漏。
-	// 排除回退Logger（由包自身持有）以及同一Logger的重复设置。
-	if old != nil && old.logger != logger && old.logger != fallbackLogger {
-		_ = old.logger.Close()
+	if !global.CompareAndSwap(nil, newGlobalState) {
+		return errGlobalAlreadySet
 	}
 
 	return nil
 }
 
-// Global 获取当前全局Logger（面向直接方法调用）。
-func Global() Logger {
+// getGlobal 获取当前全局Logger（面向直接方法调用）。
+func getGlobal() Logger {
 	state := global.Load()
 	if state == nil {
 		return fallbackLogger
