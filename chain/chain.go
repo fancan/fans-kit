@@ -666,3 +666,57 @@ func TokenInfoOn(ctx context.Context, chainName string, addrs []common.Address) 
 	}
 	return i.TokenInfo(ctx, addrs)
 }
+
+// Multicall 通过默认链的链上 multicall 合约批量执行 eth_call（类型由配置决定，默认 try_aggregate）。
+func Multicall(ctx context.Context, calls []CallArg) ([][]byte, error) {
+	i, e := current()
+	if e != nil {
+		return nil, e
+	}
+	return i.Multicall(ctx, calls)
+}
+
+// MulticallOn 通过指定链的链上 multicall 合约批量执行 eth_call。
+func MulticallOn(ctx context.Context, chainName string, calls []CallArg) ([][]byte, error) {
+	i, e := On(chainName)
+	if e != nil {
+		return nil, e
+	}
+	return i.Multicall(ctx, calls)
+}
+
+// MulticallAggregate 对默认链使用 aggregate 语义执行 multicall（任一子调用失败则整批失败）。
+func MulticallAggregate(ctx context.Context, calls []CallArg) ([][]byte, error) {
+	i, e := current()
+	if e != nil {
+		return nil, e
+	}
+	return i.MulticallAggregate(ctx, calls)
+}
+
+// MulticallAggregateOn 对指定链使用 aggregate 语义执行 multicall。
+func MulticallAggregateOn(ctx context.Context, chainName string, calls []CallArg) ([][]byte, error) {
+	i, e := On(chainName)
+	if e != nil {
+		return nil, e
+	}
+	return i.MulticallAggregate(ctx, calls)
+}
+
+// MulticallTryAggregate 对默认链使用 tryAggregate 语义执行 multicall（逐调用成功标志，失败位置为 nil）。
+func MulticallTryAggregate(ctx context.Context, calls []CallArg) ([][]byte, error) {
+	i, e := current()
+	if e != nil {
+		return nil, e
+	}
+	return i.MulticallTryAggregate(ctx, calls)
+}
+
+// MulticallTryAggregateOn 对指定链使用 tryAggregate 语义执行 multicall。
+func MulticallTryAggregateOn(ctx context.Context, chainName string, calls []CallArg) ([][]byte, error) {
+	i, e := On(chainName)
+	if e != nil {
+		return nil, e
+	}
+	return i.MulticallTryAggregate(ctx, calls)
+}

@@ -3,10 +3,9 @@ package chain
 import (
 	"context"
 	"strings"
-	"sync"
 
-	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
+	chainabi "github.com/fancan/fans-kit/chain/abi"
 )
 
 // Token 是 ERC20 代币的元数据。
@@ -18,34 +17,12 @@ type Token struct {
 	Decimals uint8
 }
 
-// erc20ABIJSON 仅包含 name/symbol/decimals 三个视图方法的最小 ERC20 ABI。
-const erc20ABIJSON = `[
-  {"inputs":[],"name":"name","outputs":[{"internalType":"string","name":"","type":"string"}],"stateMutability":"view","type":"function"},
-  {"inputs":[],"name":"symbol","outputs":[{"internalType":"string","name":"","type":"string"}],"stateMutability":"view","type":"function"},
-  {"inputs":[],"name":"decimals","outputs":[{"internalType":"uint8","name":"","type":"uint8"}],"stateMutability":"view","type":"function"}
-]`
-
-var (
-	erc20ABI     abi.ABI
-	erc20ABIOnce sync.Once
-)
-
-// getERC20ABI 惰性解析并缓存 ERC20 ABI。
-func getERC20ABI() abi.ABI {
-	erc20ABIOnce.Do(func() {
-		a, err := abi.JSON(strings.NewReader(erc20ABIJSON))
-		if err != nil {
-			panic("chain: invalid erc20 abi: " + err.Error())
-		}
-		erc20ABI = a
-	})
-	return erc20ABI
-}
-
-// TokenInfo 批量获取一批 ERC20 地址的 symbol/name/decimals，复用 BatchCall 的
-// 逐元素 revert 容忍与故障切换。解析失败的字段保持零值，不影响其它地址。
+// TokenInfo 批量获取一批 ERC20 地址的 symbol/name/decimals。
+// 底层通过链上 multicall 合约（tryAggregate 语义）执行，逐调用 revert 容忍；
+// 个别非标准代币（缺 symbol/decimals 导致 revert）对应字段保持零值，不影响其它地址。
+// 若该链未配置 multicall 地址，则返回错误。
 func (i *Instance) TokenInfo(ctx context.Context, addrs []common.Address) (map[common.Address]*Token, error) {
-	erc := getERC20ABI()
+	erc := chainabi.ERC20
 	packedSym, err := erc.Pack("symbol")
 	if err != nil {
 		return nil, err
@@ -68,7 +45,7 @@ func (i *Instance) TokenInfo(ctx context.Context, addrs []common.Address) (map[c
 		)
 	}
 
-	res, err := i.BatchCall(ctx, calls)
+	res, err := i.MulticallTryAggregate(ctx, calls)
 	if err != nil {
 		return nil, err
 	}

@@ -51,6 +51,10 @@ chains:
       dedup_capacity: 100000
       reorg_depth: 64
 
+    multicall:
+      address: "0xcA11bde05977b3631167028862bE2a173976CA11"  # Multicall3（ethereum mainnet）
+      type: try_aggregate
+
   arbitrum:
     chain_id: 42161
     providers:
@@ -86,3 +90,7 @@ chains:
       max_range: 1000
       dedup_capacity: 100000
       reorg_depth: 64
+
+    multicall:
+      address: "0xcA11bde05977b3631167028862bE2a173976CA11"  # Multicall3（arbitrum）
+      type: try_aggregate

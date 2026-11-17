@@ -16,6 +16,10 @@ chain/
 ├── executor.go              # RPC 执行、重试、Batch 与批量 eth_call（BatchCall）
 ├── ethereum.go              # 类型化以太坊辅助方法与参数编码
 ├── tokens.go                # ERC20 代币元数据（symbol/name/decimals）
+├── abi/
+│   ├── abi.go               # //go:embed 编译期加载 ABI JSON，init 中一次性解析
+│   ├── erc20.json           # ERC20 ABI（name/symbol/decimals）
+│   └── multicall.json       # multicall ABI（aggregate/tryAggregate）
 ├── range_logs.go            # eth_getLogs 区间自适应拆分
 ├── monitor.go               # 提供商健康与区块高度监控
 ├── provider_admin.go        # 运行期提供商增删与选择器钩子
@@ -144,6 +148,12 @@ results, err := chain.BatchCall(ctx, []chain.CallArg{
 	{To: tokenC, Data: symbolCalldata},
 })
 
+// ⑤′ 链上 multicall（推荐）：单次 eth_call 打到 multicall 合约，按链自动切换地址。
+results, err = chain.Multicall(ctx, []chain.CallArg{
+	{To: pairA, Data: getReservesA},
+	{To: pairB, Data: getReservesB},
+})
+
 // ⑥ 查交易与账户状态：交易详情、原始字节、pending nonce、gas 价格。
 tx, isPending, err := chain.TransactionByHash(ctx, txHash)   // isPending 区分 mempool 未确认
 raw, err := chain.RawTransactionByHash(ctx, txHash)
@@ -223,7 +233,10 @@ err := chain.Batch(ctx, []chain.BatchElem{
 
 ## 批量 eth_call（BatchCall）
 
-对「批量读取合约状态」这一高频场景，提供无需依赖 multicall 合约的高层封装：
+对「批量读取合约状态」这一高频场景，提供两种方式：**链上 multicall**（推荐，单次 RPC 请求）
+与 **JSON-RPC 批处理**（无需部署 multicall 合约）。
+
+JSON-RPC 批处理版本：
 
 ```go
 res, err := chain.BatchCall(ctx, []chain.CallArg{
@@ -240,6 +253,35 @@ res, err := chain.BatchCall(ctx, []chain.CallArg{
 - **网关整体拒绝识别**：若提供商对每个元素都返回限流类错误（无成功、无 revert），识别为
   provider 级失败并自动故障切换；
 - 复用现有 HTTP 熔断器、选择器与重试/指标链路。
+
+## 链上 Multicall
+
+各链部署的 multicall 合约地址不同，按链配置 `multicall.address` 后自动切换；类型通过
+`multicall.type` 选择（`try_aggregate` 默认 / `aggregate`）。
+
+```go
+// ① 使用配置的类型（默认 try_aggregate）
+res, err := chain.Multicall(ctx, []chain.CallArg{
+    {To: pairA, Data: getReservesA},
+    {To: pairB, Data: getReservesB},
+})
+
+// ② 显式指定类型
+res, err = chain.MulticallTryAggregate(ctx, calls) // 逐调用成功标志，失败位置返回 nil
+res, err = chain.MulticallAggregate(ctx, calls)    // 任一子调用失败则整批失败
+
+// ③ 指定链
+res, err = chain.MulticallOn(ctx, "arbitrum", calls)
+```
+
+两种类型：
+
+| 类型 | 方法 | 语义 |
+| --- | --- | --- |
+| `aggregate` | Multicall v1/v2 的 `aggregate` | 任一子调用失败则整批 revert |
+| `try_aggregate` | Multicall2 的 `tryAggregate` | 逐调用返回 `(success, returnData)`，失败位置为 `nil` |
+
+`TokenInfo` 已内部切换到 `tryAggregate` 语义的 multicall（个别非标准代币 revert 不影响其它地址）。
 
 ## 方法策略
 
@@ -317,7 +359,8 @@ for h := range hashes { ... }
 
 ## 代币元数据（TokenInfo）
 
-批量读取 ERC20 的 symbol/name/decimals，底层复用 `BatchCall` 的逐元素 revert 容忍：
+批量读取 ERC20 的 symbol/name/decimals。底层通过链上 multicall（`tryAggregate` 语义）执行，
+逐调用 revert 容忍（个别非标准代币不影响其它地址）；需先配置该链的 `multicall.address`：
 
 ```go
 tokens, err := chain.TokenInfo(ctx, []common.Address{usdc, weth, dai})
@@ -361,6 +404,7 @@ http.ListenAndServe(":9090", mux)
 | `health_check` | 健康检查配置 |
 | `block_monitor` | 区块监控配置 |
 | `log_recovery` | 日志恢复配置 |
+| `multicall` | 链上 multicall 合约配置 |
 
 提供商 `providers[]`：
 
@@ -374,6 +418,13 @@ http.ListenAndServe(":9090", mux)
 | `api_key` | API Key（支持 `${ENV}` 展开） |
 | `api_key_header` | 注入 API Key 的请求头名 |
 | `headers` | 额外请求头 |
+
+multicall `multicall`：
+
+| 字段 | 说明 |
+| --- | --- |
+| `address` | 该链部署的 multicall 合约地址（0x 前缀）；不同链地址不同，按链切换 |
+| `type` | `aggregate` / `try_aggregate`（默认 `try_aggregate`） |
 
 关键默认值（见 `config.go` 的 `defaults`）：HTTP 超时 10s、批处理上限 100、WS 重连 2s、
 健康检查间隔 10s/超时 3s/失败阈值 3/成功阈值 2/冷却 20s、区块监控间隔 5s/最大落后 5/一致深度 2、

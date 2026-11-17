@@ -58,6 +58,7 @@ type ChainConfig struct {
 	Health    HealthConfig     `yaml:"health_check"`
 	Block     BlockConfig      `yaml:"block_monitor"`
 	Recovery  RecoveryConfig   `yaml:"log_recovery"`
+	Multicall MulticallConfig  `yaml:"multicall"`
 }
 
 // ProviderConfig 是单个RPC提供商的配置，可同时含 HTTP 与 WS 地址。
@@ -115,6 +116,13 @@ type RecoveryConfig struct {
 type MetricsConfig struct {
 	Enabled bool   `yaml:"enabled"` // 是否启用
 	Path    string `yaml:"path"`    // metrics路径开启的路径 默认值 /metrics
+}
+
+// MulticallConfig 是链上 multicall 合约的配置。
+// 不同链部署的 multicall 合约地址不同，按链配置对应地址即可自动切换。
+type MulticallConfig struct {
+	Address string `yaml:"address"` // multicall 合约地址（0x 前缀）；为空表示未配置
+	Type    string `yaml:"type"`    // aggregate / try_aggregate（默认 try_aggregate）
 }
 
 // LoadYAML 从文件路径读取并解析YAML配置。
@@ -257,6 +265,9 @@ func defaults(c ChainConfig) ChainConfig {
 	}
 	if c.Recovery.ReorgDepth == 0 {
 		c.Recovery.ReorgDepth = 64
+	}
+	if c.Multicall.Type == "" {
+		c.Multicall.Type = "try_aggregate"
 	}
 	return c
 }

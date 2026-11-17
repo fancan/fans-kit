@@ -9,11 +9,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 	"time"
 
+	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/rpc"
+	chainabi "github.com/fancan/fans-kit/chain/abi"
 	"github.com/fancan/fans-kit/chain/provider"
 )
 
@@ -336,6 +339,153 @@ func (i *Instance) batchCallOnce(ctx context.Context, ep *provider.Endpoint, cal
 	// 网关整体拒绝（无成功、有提供商错误、无其它错误）→ 视为 provider 级失败，触发故障切换。
 	if successes == 0 && providerErrs > 0 && otherErrs == 0 {
 		return nil, fmt.Errorf("%w (%d elements)", errBatchRejected, providerErrs)
+	}
+	return out, nil
+}
+
+// ============================= Multicall =============================
+
+// MulticallType 是链上 multicall 合约的调用类型。
+type MulticallType string
+
+const (
+	// multicallAggregateType 对应 Multicall v1/v2 的 aggregate：任一子调用失败则整批 revert。
+	multicallAggregateType MulticallType = "aggregate"
+	// multicallTryAggregateType 对应 Multicall2 的 tryAggregate：逐调用返回成功标志，
+	// 个别子调用 revert 不会拖垮整批（对应位置返回 nil）。
+	multicallTryAggregateType MulticallType = "try_aggregate"
+)
+
+// multicallCall 是 (address target, bytes callData) 元组，两种类型复用同一结构。
+type multicallCall struct {
+	Target   common.Address `abi:"target"`
+	CallData []byte         `abi:"callData"`
+}
+
+// multicallAddress 返回当前链配置的 multicall 合约地址（不同链地址不同，按链切换）。
+func (i *Instance) multicallAddress() (common.Address, error) {
+	addr := strings.TrimSpace(i.cfg.Multicall.Address)
+	if addr == "" {
+		return common.Address{}, fmt.Errorf("chain %s: multicall address not configured", i.name)
+	}
+	return common.HexToAddress(addr), nil
+}
+
+// multicallCalls 把 CallArg 列表转成 multicall 的 (target, callData) 元组列表。
+func multicallCalls(calls []CallArg) []multicallCall {
+	out := make([]multicallCall, len(calls))
+	for j, ca := range calls {
+		out[j] = multicallCall{Target: ca.To, CallData: ca.Data}
+	}
+	return out
+}
+
+// Multicall 通过链上 multicall 合约批量执行 eth_call，返回与输入一一对应的原始返回数据。
+// 使用当前链配置的 multicall 类型（multicall.type，默认 try_aggregate）：
+//   - aggregate：任一子调用失败则整批失败；
+//   - try_aggregate：逐调用返回成功标志，失败子调用对应位置为 nil。
+func (i *Instance) Multicall(ctx context.Context, calls []CallArg) ([][]byte, error) {
+	if len(calls) == 0 {
+		return nil, nil
+	}
+	switch MulticallType(i.cfg.Multicall.Type) {
+	case multicallAggregateType:
+		return i.multicallAggregate(ctx, calls)
+	case multicallTryAggregateType:
+		return i.multicallTryAggregate(ctx, calls)
+	default:
+		return nil, fmt.Errorf("chain %s: unsupported multicall type %q", i.name, i.cfg.Multicall.Type)
+	}
+}
+
+// MulticallAggregate 显式使用 aggregate 语义：任一子调用失败则整批失败。
+func (i *Instance) MulticallAggregate(ctx context.Context, calls []CallArg) ([][]byte, error) {
+	return i.multicallAggregate(ctx, calls)
+}
+
+// MulticallTryAggregate 显式使用 tryAggregate 语义：逐调用成功标志，失败子调用对应位置为 nil。
+func (i *Instance) MulticallTryAggregate(ctx context.Context, calls []CallArg) ([][]byte, error) {
+	return i.multicallTryAggregate(ctx, calls)
+}
+
+func (i *Instance) multicallAggregate(ctx context.Context, calls []CallArg) ([][]byte, error) {
+	addr, err := i.multicallAddress()
+	if err != nil {
+		return nil, err
+	}
+	mc := chainabi.Multicall
+	calldata, err := mc.Pack("aggregate", multicallCalls(calls))
+	if err != nil {
+		return nil, err
+	}
+	data, err := i.EthCall(ctx, ethereum.CallMsg{To: &addr, Data: calldata}, "latest")
+	if err != nil {
+		return nil, err
+	}
+	values, err := mc.Unpack("aggregate", data)
+	if err != nil {
+		return nil, err
+	}
+	if len(values) != 2 {
+		return nil, fmt.Errorf("multicall aggregate: unexpected result arity %d", len(values))
+	}
+	ret, ok := values[1].([][]byte)
+	if !ok {
+		return nil, fmt.Errorf("multicall aggregate: unexpected returnData type %T", values[1])
+	}
+	if len(ret) != len(calls) {
+		return nil, fmt.Errorf("multicall aggregate: got %d results, want %d", len(ret), len(calls))
+	}
+	return ret, nil
+}
+
+func (i *Instance) multicallTryAggregate(ctx context.Context, calls []CallArg) ([][]byte, error) {
+	addr, err := i.multicallAddress()
+	if err != nil {
+		return nil, err
+	}
+	mc := chainabi.Multicall
+	calldata, err := mc.Pack("tryAggregate", false, multicallCalls(calls))
+	if err != nil {
+		return nil, err
+	}
+	data, err := i.EthCall(ctx, ethereum.CallMsg{To: &addr, Data: calldata}, "latest")
+	if err != nil {
+		return nil, err
+	}
+	values, err := mc.Unpack("tryAggregate", data)
+	if err != nil {
+		return nil, err
+	}
+	return decodeTryAggregate(values, len(calls))
+}
+
+// decodeTryAggregate 把 tryAggregate 的 Unpack 结果转成 [][]byte：
+// 成功调用返回其返回数据，失败调用对应位置为 nil。
+func decodeTryAggregate(values []any, n int) ([][]byte, error) {
+	if len(values) != 1 {
+		return nil, fmt.Errorf("multicall tryAggregate: unexpected result arity %d", len(values))
+	}
+
+	// values[0] 是 []struct{Success bool; ReturnData []byte}（go-ethereum 动态构造的结构体），
+	// 用反射按字段名读取，避免依赖动态结构体的精确类型/标签。
+	rv := reflect.ValueOf(values[0])
+	if rv.Kind() != reflect.Slice {
+		return nil, fmt.Errorf("multicall tryAggregate: unexpected result type %T", values[0])
+	}
+
+	out := make([][]byte, n)
+	for j := 0; j < rv.Len() && j < n; j++ {
+		elem := rv.Index(j)
+		if elem.Kind() != reflect.Struct {
+			continue
+		}
+		success := elem.FieldByName("Success")
+		retData := elem.FieldByName("ReturnData")
+		if success.IsValid() && success.Kind() == reflect.Bool && success.Bool() &&
+			retData.IsValid() && retData.Kind() == reflect.Slice {
+			out[j] = append([]byte(nil), retData.Bytes()...)
+		}
 	}
 	return out, nil
 }
