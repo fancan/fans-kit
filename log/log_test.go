@@ -3,6 +3,7 @@ package log
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"math"
 	"os"
 	"path/filepath"
@@ -174,26 +175,31 @@ func TestCallerAnnotationInfoContext(t *testing.T) {
 	assertCallerPointsToTestFile(t, caller)
 }
 
-// TestSetGlobalClosesOldLogger 验证 SetGlobal 重复调用时会关闭被替换的旧 Logger，
-// 且不会关闭当前正在使用的新 Logger。
-func TestSetGlobalClosesOldLogger(t *testing.T) {
+// TestSetGlobalSetOnce 验证全局 Logger 是「一次性设置」语义：
+// 首次 SetGlobal 成功，之后再次设置被拒绝，且不会关闭任何 Logger
+// （因为全局 Logger 从不被替换，也就不存在「旧 Logger」需要关闭）。
+func TestSetGlobalSetOnce(t *testing.T) {
 	resetGlobal()
 
 	m1 := &mockLogger{}
 	m2 := &mockLogger{}
 
 	if err := SetGlobal(m1); err != nil {
-		t.Fatal(err)
+		t.Fatalf("first SetGlobal: %v", err)
 	}
-	if err := SetGlobal(m2); err != nil {
-		t.Fatal(err)
+	err := SetGlobal(m2)
+	if !errors.Is(err, errGlobalAlreadySet) {
+		t.Fatalf("second SetGlobal should be rejected, got %v", err)
 	}
 
-	if !m1.closed {
-		t.Fatal("replaced logger was not closed")
+	if m1.closed {
+		t.Fatal("active logger must not be closed")
 	}
 	if m2.closed {
-		t.Fatal("current logger should not be closed")
+		t.Fatal("rejected logger must not be closed")
+	}
+	if got := getGlobal(); got != Logger(m1) {
+		t.Fatal("global logger must remain the first one")
 	}
 }
 
@@ -277,22 +283,14 @@ func TestFieldRoundTrip(t *testing.T) {
 	}
 }
 
-// 测试SetGlobal还没有关闭旧logger
-func TestSetGlobalDoesNotCloseOldLogger(t *testing.T) {
-	m1 := &mockLogger{}
-	m2 := &mockLogger{}
+// TestSetGlobalRejectsNil 验证 nil Logger 被拒绝。
+func TestSetGlobalRejectsNil(t *testing.T) {
+	resetGlobal()
 
-	if err := SetGlobal(m1); err != nil {
-		t.Fatal(err)
+	if err := SetGlobal(nil); !errors.Is(err, errNilLogger) {
+		t.Fatalf("want errNilLogger, got %v", err)
 	}
-	if err := SetGlobal(m2); err != nil {
-		t.Fatal(err)
-	}
-
-	if m1.closed {
-		t.Fatal("SetGlobal must not close the replaced logger")
-	}
-	if m2.closed {
-		t.Fatal("SetGlobal must not close the current logger")
+	if getGlobal() == nil {
+		t.Fatal("global should fall back to the built-in logger")
 	}
 }
